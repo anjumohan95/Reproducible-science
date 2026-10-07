@@ -1,0 +1,254 @@
+---
+title: "Reproducible science Assignment"
+author: "Anju mohan"
+date: "2026-10-08"
+output:
+  word_document: default
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+#Introduction
+
+In this exercise, we will perform multiple regression analysis.
+
+## Getting started
+ Install necessary libraries
+```{r}
+library(car)
+library(GGally)
+library(performance)
+library(ggplot2)
+library(readr)
+library(dplyr)
+library(tidyr)
+```
+## Importing data set
+Import the data set "WOLFPUPS.csv"
+Find the data file called "WOLFPUPS.csv" in the folder for this practical, and read it into a well-named data
+frame. Verify that it has loaded properly,
+```{r}
+df_wp <- read_csv("WOLFPUPS.CSV")
+
+```
+# Data Quality control
+This simulated dataset represents annual observations from a fictional wildlife park. We will examine how
+wolf pup numbers are associated with moose abundance, wolf parasite load, and hunting permits. The
+ecological setting provides context for practicing multiple regression; the data are not evidence about a
+real ecosystem. The predictor variables included in the dataset are the number of adult moose in the park
+(ADULTS), the number of moose calves born (CALVES), the average blood helminth load (WORMS) of trapped
+wolves (determined using blood samples from randomly selected wolves every year), and the number of moose
+hunting permits (PERMITS) issued by the park to human hunters.
+Use plotting commands to plot the data to do the quality control.
+check the conspicuous outlines.
+Plot histogram
+check the outlier of ADULTS Using Histogram and later checking the outliers of other columns in the data
+
+```{r}
+df_wp |> 
+  ggplot(aes(x=ADULTS)) + geom_histogram()  
+
+```
+```{r}
+df_wp |> 
+  ggplot(aes(x=CALVES)) + geom_histogram()  
+```
+The above figure shows an extreme point above 300, that looks like an error. 
+
+```{r}
+df_wp |> 
+  ggplot(aes(x=PERMITS)) + geom_histogram()
+
+```
+
+
+```{r}
+df_wp |> 
+  ggplot(aes(x=WORMS)) + geom_histogram()
+```
+To produce a series of pairwise plots that illustrate bivariate relationships between all of the
+variables in your dataset, and search visually for strongly correlated predictors. use ggplot,
+```{r}
+ggpairs(df_wp)
+```
+The figure above shows a number of quite strong relationships, but most of these are not strong enough to
+raise a concern. However the relationship between ADULTS and CALVES is so strong that models will have
+trouble distinguishing them. Before we start the modelling, let’s look closely at the relationships between PUPS and the other variables 
+
+## Fitlering the data
+Filtering only the Calves which is ,300 and then plot histogram
+```{r}
+df_wp1<- df_wp |> 
+  filter(CALVES<300)
+df_wp1 |> 
+  ggplot(aes(x=CALVES,Y=PUPS)) + geom_histogram()
+
+```
+# Build a model 
+
+```{r}
+MOD.1 <- lm(PUPS ~ ADULTS+CALVES+WORMS+PERMITS, data = df_wp1)
+```
+Check the model
+```{r}
+check_model(MOD.1)
+```
+check the summary of the model
+```{r}
+summary(MOD.1)
+```
+## Build an alternative Model
+build an alternative model excluding one of the offending high VIF predictors, here excluding the ADULTS
+```{r}
+MOD.2<- update(MOD.1,~. -ADULTS)
+```
+check the updated model
+```{r}
+check_model(MOD.2)
+```
+Take the summary of the MOD.2 and compare it with MOD.1
+```{r}
+summary(MOD.2)
+```
+Made an another model by excluding the PERMITS column
+```{r}
+MOD.3<- update(MOD.2,~.-PERMITS)
+```
+
+# Model Simplification
+
+Taking the ANOVA
+```{r}
+anova(MOD.2,MOD.3)
+```
+To derive standardized regression coefficients, centre each predictor by subtracting its mean from each
+observation, then scale it by dividing by its standard deviation. You could work out how to do this easily
+enough, but R already has a built in function, scale() that will do it for you. You can easily nest scale()
+into the call for a linear model as follows:
+```{r}
+MOD.3s <- lm(PUPS = Scale(CALVES)+Scale(WORMS),data = df_wp)
+```
+## Inspecting added variable plots
+
+We can use the avPlots() command from the car package to automatically generate
+“added variable plots” (but results may vary – some other students find added variable plots to be even more
+confusing than multiple regression!) These are simpler to generate than the visualisations below, but they
+are often more difficult to interpret in terms of the original scales of the data, and for that reason are rarely
+presented to readers in publications.
+
+```{r}
+avPlots(MOD.3)
+```
+```{r}
+avPlots(MOD.3s)
+```
+# Visualizing partial effects
+
+‘partial effects’ refers to modelled associations conditional on the other included predictors,
+rather than demonstrated causal effects. Although the added variable plots can provide helpful insight into
+the model, we’ll usually want to illustrate the fitted model object along with the original data for our readers,
+as we did for univariate regressions.
+
+## Using predict()
+Use the predict() command and ggplot package to add the lines and 95% confidence intervals to plots of
+the data. 
+Use the tidyverse crossing() function to make a new data frame that varies only one of the key variables
+at a time, 
+
+```{r}
+NEWPUPS_varWORMS <- crossing(WORMS = seq(0.01,1.22,
+                                         length = 100),
+                             CALVES = mean(df_wp1$CALVES),
+                             PERMITS = mean(df_wp1$PERMITS))
+```
+Inspect this object – notice that it has three predictors, but only one of them varies, while the other is held to
+its mean value. Now use the predict command to generate the predicted number of PUPS for this particular
+combination (in doing so, we’re illustrating the partial effect of WORMS after controlling for CALVES, since all
+CALVES values are set to the mean):
+```{r}
+NEWYUSINGWORMS <- predict(MOD.2,
+                         newdata = NEWPUPS_varWORMS,
+                         int = "c")
+```
+You should bind the matrix produced by predict with its corresponding new data frame before using ggplot,
+as follows:
+
+```{r}
+varWORMS_PREDS <- bind_cols(NEWPUPS_varWORMS,
+                            as_tibble(NEWYUSINGWORMS))
+```
+
+## Plotting the data
+
+```{r}
+ggplot(varWORMS_PREDS, aes(x=WORMS,y= fit))+
+  geom_line() +
+  geom_ribbon(aes(ymin=lwr,
+                  ymax=upr),
+              alpha= 0.25)+
+  labs(x = "WORMS",
+       y = "PUPS") + 
+  geom_point(data = df_wp1,
+             aes(y=PUPS),colour = "blue")+
+theme_bw()
+```
+# Predicting the data
+```{r}
+NEWPUPS_varCALVS <- crossing(CALVES = seq(50,175,
+                                         length = 100),
+                             WORMS = mean(df_wp1$WORMS),
+                             PERMITS = mean(df_wp1$PERMITS))
+```
+
+
+```{r}
+NEWUSINGCALVS<- predict(MOD.2,
+                         newdata = NEWPUPS_varCALVS,
+                         int= "c")
+```
+
+
+```{r}
+varCALVES_PREDS<- bind_cols(NEWPUPS_varCALVS,as_tibble(NEWUSINGCALVS))
+```
+
+## Plotting the predicted data
+```{r}
+ggplot(varCALVES_PREDS, aes(x=CALVES,y= fit))+
+  geom_line() +
+  geom_ribbon(aes(ymin=lwr,
+                  ymax=upr),
+              alpha= 0.25)+
+  labs(x = "CALVES",
+       y = "PUPS") + 
+  geom_point(data = df_wp1,
+             aes(y=PUPS),colour = "blue")+
+  theme_bw()
+```
+# Interpretation
+In the fitted model, wolf pup numbers were negatively associated with parasite load and positively associated with moose calf numbers. Each association was estimated while accounting for the other included predictor.Because calf and adult moose numbers were strongly correlated, this analysis provides little basis for separating their associations with pup numbers.
+
+# Sample Results text:
+The minimal adequate model of wolf recruitment rates showed a significant negative association with parasite load (Slope B = -6.77; Standardized regression coefficient Beta = -1.63; t = -3.68,P= 0.0007; 
+and a positive association with the number of moose calves (B = 0.044, Beta = 1.26; t = 2.83; P = 0.0071; Because moose calf numbers were collinear with adult population size, we cannot distinguish between the effects of adults or calves on wolf recruitment.
+
+
+
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
